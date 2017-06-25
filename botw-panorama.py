@@ -4,9 +4,14 @@ from __future__ import print_function
 
 from subprocess import call
 import argparse
+import math
 import sys
 import cv2
 import os
+
+IN = -1
+OUT = -2
+step = 1
 
 def log(*args, **kwargs):
     print(*args, **kwargs)
@@ -27,6 +32,7 @@ def hugin_tool(cmd):
         cmd[i] = out_pto
 
     if options.first_step <= step:
+        log("Running:", *cmd)
         call(cmd)
     else:
         log("Skipping step", step, ":", *cmd)
@@ -57,25 +63,41 @@ def load_images(image_filenames):
 def write_images(name_format, images):
     filenames = []
     for i, img in enumerate(images):
-        filename = name_format.format(prefix, i)
+        filename = name_format.format(i)
         cv2.imwrite(filename, img)
         filenames.append(filename)
     return filenames
 
 if __name__ == "__main__":
-    default_crosshair_mask = os.path.join(os.path.dirname(__file__), "crosshair-mask-1-digit.png")
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--first-step", type=int, default=1)
-    parser.add_argument("--crosshair-mask", default=default_crosshair_mask)
+    parser.add_argument("--holding-zr", choices=("yes","no"), default="yes")
+    parser.add_argument("--arrows", type=int, default=0, help="number of arrows (0-999); default is 0")
     parser.add_argument("images", nargs="+")
     options = parser.parse_args()
 
-    IN = -1
-    OUT = -2
+    if options.arrows not in range(1000):
+        print("Number of arrows must be in range 0-999")
+        sys.exit(1)
 
-    step = 1
+    digits = 1 if options.arrows == 0 else (int(math.log10(options.arrows)) + 1)
 
+    crosshair_mask = "crosshair-mask-zr-{}-digits-{}.png".format(
+        options.holding_zr,
+        digits
+    )
+    if options.holding_zr == "yes" and options.arrows == 0:
+        crosshair_mask = "crosshair-mask-zr-yes-arrows-0.png"
+
+    crosshair_mask = os.path.join(
+        os.path.dirname(
+            os.path.realpath(__file__)
+        ),
+        crosshair_mask
+    )
+
+    print("Using crosshair mask:", crosshair_mask)
     name_format = "nocross-cropped-{}.png"
 
     if options.first_step <= 1:
@@ -84,7 +106,7 @@ if __name__ == "__main__":
         log("done.")
 
         log("Removing crosshairs... ", end="")
-        images = remove_crosshair(images, options.crosshair_mask)
+        images = remove_crosshair(images, crosshair_mask)
         log("done.")
 
         log("Cropping... ", end="")
@@ -104,7 +126,7 @@ if __name__ == "__main__":
     hugin_tool(["pto_gen","--fov","35","-o",OUT] + image_filenames)
 
     # control points
-    hugin_tool(["cpfind","--multirow","10",IN,"-o",OUT])
+    hugin_tool(["cpfind","--multirow",IN,"-o",OUT])
 
     # find vertical lines
     hugin_tool(["linefind",IN,"-o",OUT])
